@@ -1,0 +1,324 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//ibatis.apache.org//DTD Mapper 3.0//EN" "http://ibatis.apache.org/dtd/ibatis-3-mapper.dtd">
+
+<mapper namespace="com.spiri.cep.database.MyBasicDataMapper">
+
+
+	<!-- 중복발생 확인.  -->
+	<select id="selectQmsStbOspAlarm" parameterType="java.util.HashMap" resultType="Integer">
+		SELECT COUNT(1)
+		FROM TB_QMS_STP_OSP_ALARM
+		WHERE 1=1 
+		AND LOCATION = #{NW_BROFF_CD}
+		AND TIME = CONCAT(SUBSTRING(#{BATCH_TIME}, 1, 11), '000')
+	</select>
+
+
+	<!-- 알람발생  저장. -->
+	<insert id="insertQmsStbOspAlarm" parameterType="java.util.HashMap">
+		INSERT INTO TB_QMS_STP_OSP_ALARM (COLL_DTTI, NMS, SEQ, LOCATION, SERVERITY, CODE, TIME, TYPE, TEXT, PROG_ST_CD)
+		VALUES(FORMATDATETIME(sysdate, 'yyyyMMddHHmmss'), '404', CONCAT('QMS', FORMATDATETIME(sysdate, 'yyyyMMddHHmmssSSS')), 
+				#{NW_BROFF_CD}, 'Critical', 'QMS001', CONCAT(SUBSTRING(#{BATCH_TIME}, 1, 11), '000'), 'Q', #{TEXT}, '0')
+	</insert>
+
+
+	<!-- 10분통계 분석완료 대상 상태갱신 -->
+	<update id="updateQmsStbLogStatLog" parameterType="java.util.HashMap">
+			UPDATE TB_QMS_STB_LOG_STAT_LOG SET ANALYZE_YN = 'Y' 
+			WHERE 1=1
+			AND STATS_TYPE = 'QMS_STB_LOG_OUTPUT_10M'
+			AND ANALYZE_YN = 'N'
+			AND BATCH_TIME = #{BATCH_TIME}
+	</update>
+
+
+	<!-- 10분통계 분석 대상 조회 -->
+	<select id="selectQmsStbLogStatLog" parameterType="java.util.HashMap" resultType="java.util.HashMap">
+		SELECT BATCH_TIME
+		     , EXTRACT(WEEK FROM PARSEDATETIME(BATCH_TIME, 'yyyyMMddHHmm')) AS WEEK_DATE
+		     , DAY_OF_WEEK(PARSEDATETIME(BATCH_TIME, 'yyyyMMddHHmm'))       AS DAY_OF_WEEK
+		     , SUBSTRING(BATCH_TIME, 9, 10)                                 AS HOUR_MINUTE
+		     , CONCAT(SUBSTRING(BATCH_TIME, 9, 10), '0')                    AS STT_HOUR_MINUTE
+		     , CONCAT(SUBSTRING(BATCH_TIME, 9, 10), '9')                    AS END_HOUR_MINUTE
+		     , FORMATDATETIME(DATEADD('WEEK', -10, PARSEDATETIME(BATCH_TIME, 'yyyyMMddHHmm')), 'yyyyMMddHHm') AS STT_BATCH_TIME
+		     , FORMATDATETIME(DATEADD('WEEK',  -1, PARSEDATETIME(BATCH_TIME, 'yyyyMMddHHmm')), 'yyyyMMddHHm') AS END_BATCH_TIME
+		FROM
+		(
+			<if test="DEFECT_1M != null">
+			-- SELECT DATEADD('MINUTE', 0, PARSEDATETIME(#{BATCH_TIME}, 'yyyyMMddHHmm')) AS BATCH_TIME
+			SELECT CONCAT(#{BATCH_TIME}, '') AS BATCH_TIME
+			FROM DUAL
+			</if>
+
+			<if test="DEFECT_1M == null">
+			SELECT MIN(BATCH_TIME) AS BATCH_TIME
+			FROM TB_QMS_STB_LOG_STAT_LOG
+			WHERE 1=1
+			AND STATS_TYPE = 'QMS_STB_LOG_OUTPUT_10M'
+			AND ANALYZE_YN = 'N'
+			</if>
+		)
+	</select>
+
+
+	<!-- 1분단위 defect 조회 -->
+	<select id="selectQmsStbLogStat01M" parameterType="java.util.HashMap" resultType="java.util.HashMap">
+		SELECT NW_BROFF_CD, WEEK_DATE, DAY_OF_WEEK, HOUR_MINUTE ,BATCH_TIME
+		      ,DATEDIFF('second', timestamp '1970-01-01 00:00:00', PARSEDATETIME(BATCH_TIME, 'yyyyMMddHHmm')) AS TIME_STAMP
+		FROM
+		(
+		    SELECT
+		          T1.NW_BROFF_CD              AS NW_BROFF_CD
+		         ,T1.WEEK_DATE                AS WEEK_DATE
+		         ,T1.DAY_OF_WEEK              AS DAY_OF_WEEK
+		         ,T1.HOUR_MINUTE              AS HOUR_MINUTE
+		         ,T1.BATCH_TIME               AS BATCH_TIME
+		         ,T1.CUST10_STB_RTP_ERRCNT10  AS CUST10_STB_RTP_ERRCNT10
+		         ,T1.CUST0_STB_RTP_ERRCNT10   AS CUST0_STB_RTP_ERRCNT10
+		         ,T2.P_VAL_CUST10             AS P_VAL_CUST10
+		         ,(T1.CUST0_STB_RTP_ERRCNT10*T2.P_VAL_CUST10)+#{S}*SQRT(T1.CUST0_STB_RTP_ERRCNT10*T2.P_VAL_CUST10*(1- T2.P_VAL_CUST10)) AS NP_CUST10_UCL
+		    FROM
+		    (
+		        SELECT NW_BROFF_CD
+		              ,HOUR_MINUTE
+		              ,DAY_OF_WEEK
+		              ,WEEK_DATE
+		              ,BATCH_TIME
+		              ,CUST10_STB_RTP_ERRCNT10
+		              ,CUST0_STB_RTP_ERRCNT10
+		        FROM TB_QMS_STB_LOG_STAT_01M
+		        WHERE 1=1
+				-- AND NW_BROFF_CD NOT IN ('0000')		        
+		        -- AND WEEK_DATE = 32
+		        -- AND DAY_OF_WEEK = 7
+		        -- AND HOUR_MINUTE BETWEEN '0000' AND '0009'
+		        AND NW_BROFF_CD IN (#{NW_BROFF_CD})
+		        AND WEEK_DATE   = #{WEEK_DATE}
+		        AND DAY_OF_WEEK = #{DAY_OF_WEEK}
+		        AND HOUR_MINUTE BETWEEN #{STT_HOUR_MINUTE} AND #{END_HOUR_MINUTE}
+		    ) T1
+		    LEFT JOIN
+		    (
+		        SELECT NW_BROFF_CD
+		              ,DAY_OF_WEEK
+		              ,HOUR_MINUTE
+		              ,SUM(CUST10_STB_RTP_ERRCNT10)/SUM(CUST0_STB_RTP_ERRCNT10) AS P_VAL_CUST10
+		        FROM
+		        (
+		            SELECT NW_BROFF_CD
+		                  ,DAY_OF_WEEK
+		                  ,HOUR_MINUTE
+		                  ,WEEK_DATE
+		                  ,BATCH_TIME
+		                  ,CUST10_STB_RTP_ERRCNT10
+		                  ,CUST0_STB_RTP_ERRCNT10
+		                  ,ROWNUM AS ROW_NUM1
+		            FROM        
+		            (
+		                SELECT NW_BROFF_CD
+		                      ,DAY_OF_WEEK
+		                      ,HOUR_MINUTE
+		                      ,WEEK_DATE
+		                      ,BATCH_TIME
+		                      ,CUST10_STB_RTP_ERRCNT10
+		                      ,CUST0_STB_RTP_ERRCNT10                     
+		                FROM TB_QMS_STB_LOG_STAT_01M
+		                WHERE 1=1
+		                -- AND NW_BROFF_CD NOT IN ('0000')
+		                -- AND WEEK_DATE   BETWEEN 22 AND 31
+		                -- AND DAY_OF_WEEK = 7
+		                -- AND HOUR_MINUTE BETWEEN '0000' AND '0009'
+						AND NW_BROFF_CD IN (#{NW_BROFF_CD})
+						AND BATCH_TIME BETWEEN #{STT_BATCH_TIME} AND #{END_BATCH_TIME}
+						AND DAY_OF_WEEK = #{DAY_OF_WEEK}
+						AND HOUR_MINUTE BETWEEN #{STT_HOUR_MINUTE} AND #{END_HOUR_MINUTE}
+						-- GROUP BY NW_BROFF_CD, DAY_OF_WEEK, HOUR_MINUTE, WEEK_DATE, BATCH_TIME, CUST10_STB_RTP_ERRCNT10, CUST0_STB_RTP_ERRCNT10
+		            )
+		        )
+		        WHERE ROW_NUM1 BETWEEN 3 AND 10
+		        GROUP BY NW_BROFF_CD
+		            , DAY_OF_WEEK
+		            , HOUR_MINUTE            
+		    ) T2
+		    ON  T1.NW_BROFF_CD = T2.NW_BROFF_CD
+		    AND T1.DAY_OF_WEEK = T2.DAY_OF_WEEK
+		    AND T1.HOUR_MINUTE = T2.HOUR_MINUTE
+		)
+		WHERE 1=1
+		AND CUST10_STB_RTP_ERRCNT10 - NP_CUST10_UCL > 0
+		AND P_VAL_CUST10 > 0
+		ORDER BY NW_BROFF_CD, WEEK_DATE, DAY_OF_WEEK, HOUR_MINUTE
+	</select>
+
+
+	<!-- 10분단위 defect 조회 -->
+	<select id="selectQmsStbLogStat10M" parameterType="java.util.HashMap" resultType="java.util.HashMap">
+		SELECT NW_BROFF_CD, HOUR_MINUTE, DAY_OF_WEEK, BATCH_TIME, TIME_STAMP
+			FROM
+			(
+			    SELECT 
+			           NW_BROFF_CD
+			         , HOUR_MINUTE
+			         , DAY_OF_WEEK
+			         , BATCH_TIME
+			         , CUST_CNT
+			         , CUST0_STB_RTP_ERRCNT10
+			         , CUST10_STB_RTP_ERRCNT10
+			         , CUST0_STB_RTP_PERCENT10
+			         , P_VAL_CUST10
+			         , P_VAL_CUST0
+			         , NP_CUST10_UCL
+			         , P_CUST0_UCL
+			         , CASE WHEN CUST10_STB_RTP_ERRCNT10-NP_CUST10_UCL > 0 THEN 1
+			                ELSE 0
+			           END AS DEFECT1
+			         --, CASE WHEN CUST0_STB_RTP_PERCENT10-P_CUST0_UCL > 0 THEN 1
+			         --       ELSE 0
+			         --  END AS DEFECT2
+			         , DATEDIFF('second', timestamp '1970-01-01 00:00:00', PARSEDATETIME(BATCH_TIME, 'yyyyMMddHHmm')) AS TIME_STAMP
+			    FROM
+			    (
+			        SELECT
+			               T1.NW_BROFF_CD              AS NW_BROFF_CD
+			             , T1.HOUR_MINUTE              AS HOUR_MINUTE
+			             , T1.DAY_OF_WEEK              AS DAY_OF_WEEK
+			             , T1.BATCH_TIME               AS BATCH_TIME
+			             , T1.CUST_CNT                 AS CUST_CNT
+			             , T1.CUST0_STB_RTP_ERRCNT10   AS CUST0_STB_RTP_ERRCNT10
+			             , T1.CUST10_STB_RTP_ERRCNT10  AS CUST10_STB_RTP_ERRCNT10
+			             , T1.CUST0_STB_RTP_PERCENT10  AS CUST0_STB_RTP_PERCENT10
+			             , T2.P_VAL_CUST10             AS P_VAL_CUST10
+			             , T3.P_VAL_CUST0              AS P_VAL_CUST0
+			             --, (T1.CUST0_STB_RTP_ERRCNT10*T2.P_VAL_CUST10)+10*SQRT(T1.CUST0_STB_RTP_ERRCNT10*T2.P_VAL_CUST10*(1-T2.P_VAL_CUST10)) AS NP_CUST10_UCL
+			             --, (T1.CUST0_STB_RTP_ERRCNT10*T2.P_VAL_CUST10)+50*SQRT(T1.CUST0_STB_RTP_ERRCNT10*T2.P_VAL_CUST10*(1-T2.P_VAL_CUST10)) AS NP_CUST10_UCL
+			             , (T1.CUST0_STB_RTP_ERRCNT10*T2.P_VAL_CUST10)+#{S}*SQRT(T1.CUST0_STB_RTP_ERRCNT10*T2.P_VAL_CUST10*(1-T2.P_VAL_CUST10)) AS NP_CUST10_UCL
+			             , T3.P_VAL_CUST0+10*SQRT(T3.P_VAL_CUST0*(1-T3.P_VAL_CUST0)/T3.CUST_CNT) AS P_CUST0_UCL
+			        FROM
+		            (
+		                /*실제 감지해야하는 날 */
+		                SELECT NW_BROFF_CD
+		                     , HOUR_MINUTE
+		                     , DAY_OF_WEEK
+		                     , WEEK_DATE
+		                     , BATCH_TIME
+		                     , CUST_CNT
+		                     , CUST10_STB_RTP_ERRCNT10
+		                     , CUST0_STB_RTP_ERRCNT10
+		                     , CUST0_STB_RTP_PERCENT10
+		                FROM TB_QMS_STB_LOG_STAT_10M
+		                WHERE 1=1
+		                AND NW_BROFF_CD NOT IN('0000')
+		                -- AND WEEK_DATE   = 32
+		                -- AND DAY_OF_WEEK = 7
+		                -- AND HOUR_MINUTE = 000
+                        AND WEEK_DATE   = #{WEEK_DATE}
+                        AND DAY_OF_WEEK = #{DAY_OF_WEEK}
+                        AND HOUR_MINUTE = #{HOUR_MINUTE}
+		            ) T1
+		            LEFT JOIN
+		            (
+		               /*오류 10회이상 겪은 고객의 p값계산(최대값 2개 제외_이상치 제거)_42220*/
+		               SELECT NW_BROFF_CD
+		                     , DAY_OF_WEEK
+		                     , HOUR_MINUTE
+		                     , SUM(CUST10_STB_RTP_ERRCNT10)/SUM(CUST0_STB_RTP_ERRCNT10) AS P_VAL_CUST10
+		                FROM
+		                (
+		                    SELECT NW_BROFF_CD
+		                         , DAY_OF_WEEK
+		                         , HOUR_MINUTE
+		                         , WEEK_DATE
+		                         , CUST_CNT
+		                         , CUST10_STB_RTP_ERRCNT10
+		                         , CUST0_STB_RTP_ERRCNT10
+		                         , CUST0_STB_RTP_PERCENT10
+		                         , ROWNUM AS ROW_NUM1
+		                    FROM
+		                    (
+		                        SELECT NW_BROFF_CD
+		                             , DAY_OF_WEEK
+		                             , HOUR_MINUTE
+		                             , WEEK_DATE
+		                             , CUST_CNT
+		                             , CUST10_STB_RTP_ERRCNT10
+		                             , CUST0_STB_RTP_ERRCNT10
+		                             , CUST0_STB_RTP_PERCENT10
+		                        FROM TB_QMS_STB_LOG_STAT_10M
+		                        WHERE 1=1
+		                        AND NW_BROFF_CD NOT IN('0000')
+		                        -- AND WEEK_DATE   BETWEEN 22 AND 31
+		                        -- AND HOUR_MINUTE = 000
+		                        -- AND DAY_OF_WEEK = 7
+		                        AND BATCH_TIME BETWEEN #{STT_BATCH_TIME} AND #{END_BATCH_TIME} 
+		                        AND DAY_OF_WEEK = #{DAY_OF_WEEK}
+		                        AND HOUR_MINUTE = #{HOUR_MINUTE}
+		                        -- GROUP BY NW_BROFF_CD, DAY_OF_WEEK, HOUR_MINUTE, WEEK_DATE, CUST_CNT, CUST10_STB_RTP_ERRCNT10, CUST0_STB_RTP_ERRCNT10, CUST0_STB_RTP_PERCENT10
+		                        ORDER BY CUST10_STB_RTP_ERRCNT10 DESC
+		                    )
+		                )
+		                WHERE ROW_NUM1 BETWEEN 3 AND 10
+		                GROUP BY NW_BROFF_CD
+		                       , DAY_OF_WEEK
+		                       , HOUR_MINUTE
+		            ) T2
+		            ON  T1.NW_BROFF_CD = T2.NW_BROFF_CD
+		            AND T1.DAY_OF_WEEK = T2.DAY_OF_WEEK
+		            AND T1.HOUR_MINUTE = T2.HOUR_MINUTE
+		            LEFT JOIN
+		            (
+		                /*전체고객의 p값계산(최대값 2개 제외_이상치 제거)_42220*/
+		                SELECT
+		                   NW_BROFF_CD
+		                   , DAY_OF_WEEK
+		                   , HOUR_MINUTE
+		                   , CUST_CNT
+		                   , SUM(CUST0_STB_RTP_ERRCNT10)/SUM(CUST_CNT) AS P_VAL_CUST0       
+		                FROM
+		                (
+		                    SELECT
+		                         NW_BROFF_CD
+		                         , DAY_OF_WEEK
+		                         , HOUR_MINUTE
+		                         , WEEK_DATE
+		                         , CUST_CNT
+		                         , CUST0_STB_RTP_ERRCNT10
+		                         , ROWNUM AS ROWNUM2
+		                    FROM
+		                    (
+		                        SELECT NW_BROFF_CD
+		                             , DAY_OF_WEEK
+		                             , HOUR_MINUTE
+		                             , WEEK_DATE
+		                             , CUST_CNT
+		                             , CUST0_STB_RTP_ERRCNT10
+		                        FROM TB_QMS_STB_LOG_STAT_10M
+		                        WHERE 1=1
+		                        AND NW_BROFF_CD NOT IN('0000')
+		                        -- AND WEEK_DATE BETWEEN 22 AND 31
+		                        -- AND DAY_OF_WEEK = 7
+		                        -- AND HOUR_MINUTE = 000
+		                        AND BATCH_TIME BETWEEN #{STT_BATCH_TIME} AND #{END_BATCH_TIME}
+		                        AND DAY_OF_WEEK = #{DAY_OF_WEEK}
+		                        AND HOUR_MINUTE = #{HOUR_MINUTE}
+		                        -- GROUP BY NW_BROFF_CD, DAY_OF_WEEK, HOUR_MINUTE, WEEK_DATE, CUST_CNT, CUST0_STB_RTP_ERRCNT10
+		                        ORDER BY CUST0_STB_RTP_ERRCNT10 DESC
+		                    )
+		                )
+		                WHERE ROWNUM2 BETWEEN 3 AND 10
+		                GROUP BY NW_BROFF_CD
+		                       , DAY_OF_WEEK
+		                       , HOUR_MINUTE
+		                       , CUST_CNT
+		            ) T3
+		            ON  T1.NW_BROFF_CD = T3.NW_BROFF_CD
+		            AND T1.DAY_OF_WEEK = T3.DAY_OF_WEEK
+		            AND T1.HOUR_MINUTE = T3.HOUR_MINUTE
+			    )
+			    WHERE NP_CUST10_UCL > 0
+			)
+			-- WHERE DEFECT1 = 1 AND DEFECT2 = 1
+			WHERE DEFECT1 = 1
+			ORDER BY NW_BROFF_CD, DAY_OF_WEEK, HOUR_MINUTE
+	</select>
+
+</mapper>

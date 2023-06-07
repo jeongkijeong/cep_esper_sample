@@ -1,0 +1,73 @@
+package com.spiri.cep.worker;
+
+import java.util.List;
+import java.util.Map;
+
+import com.spiri.common.util.Utils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.spiri.cep.context.DataHandler;
+import com.spiri.cep.database.WorkerDaoCore;
+import com.spiri.cep.listener.CEPListenerManager;
+
+/**
+ * 1분통계 로그를 조회하여 defect 발생여부 확인.
+ * @author JKJ
+ *
+ */
+public class StpLogStat01M extends DataHandler {
+	private Logger logger = LoggerFactory.getLogger(getClass());
+	
+	private WorkerDaoCore workerDaoCore = null;
+	private int S = 3;
+
+	public StpLogStat01M() {
+		super();
+		this.workerDaoCore = WorkerDaoCore.getInstance();
+
+		int val = Integer.valueOf(Utils.getProterty("01M_standard_deviation"));
+		if (val > 0) {
+			S = val;
+		}
+		
+		logger.info("01M_standard deviation {}", S);
+
+	}
+
+	@SuppressWarnings("unchecked")
+	@Override
+	public void handler(Object object) {
+		if (object != null) {
+			dataProcess((Map<String, Object>) object);
+		}
+	}
+
+	private void dataProcess(Map<String, Object> param) {
+		// 1분통계 defect 설정.
+		param.put("DEFECT_1M", Boolean.TRUE);
+		
+
+		List<Map<String, Object>> targetList = workerDaoCore.selectStbLogStatLog(param);
+		if (targetList == null || targetList.size() == 0) {
+			return;
+		}
+		param.putAll(targetList.get(0));
+		// 표준편차
+		param.put("S", S);
+
+		List<Map<String, Object>> defectList = workerDaoCore.selectStbLogStat01M(param);
+		if (defectList == null || defectList.size() == 0) {
+			for (Map<String, Object> defect : defectList) {
+				if (defect == null) {
+					continue;
+				}else {
+					logger.info("send >> {} / {} / {}", TO_DEFECT_01M, param.get(NW_BROFF_CD), param.get(BATCH_TIME));
+				}
+
+				// Send 1 minute defect data to CEP engine.
+				CEPListenerManager.getInstance().address(TO_DEFECT_01M, defect);
+			}
+		}
+	}
+}
