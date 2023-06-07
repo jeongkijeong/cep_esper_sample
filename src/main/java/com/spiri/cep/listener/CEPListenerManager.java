@@ -3,7 +3,7 @@ package com.spiri.cep.listener;
 import java.util.Map;
 
 import com.spiri.esper.engine.EsperEngine;
-import com.spiri.cep.common.CommonString;
+import com.spiri.common.CommonString;
 import com.spiri.cep.main.ProcessManager;
 
 public class CEPListenerManager implements ProcessManager, CommonString {

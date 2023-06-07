@@ -8,7 +8,7 @@ import org.slf4j.LoggerFactory;
 import com.espertech.esper.client.EventBean;
 import com.espertech.esper.client.UpdateListener;
 import com.espertech.esper.event.map.MapEventBean;
-import com.spiri.cep.common.CommonString;
+import com.spiri.common.CommonString;
 import com.spiri.cep.worker.StatHandlerManager;
 
 /**

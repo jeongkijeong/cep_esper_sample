@@ -6,7 +6,7 @@ import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.spiri.cep.common.CommonString;
+import com.spiri.common.CommonString;
 import com.spiri.cep.main.ProcessManager;
 
 public class StatHandlerManager implements ProcessManager, CommonString {

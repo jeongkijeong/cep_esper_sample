@@ -1,4 +1,4 @@
-package com.spiri.cep.common;
+package com.spiri.common;
 
 public interface CommonString {
 	// worker address.

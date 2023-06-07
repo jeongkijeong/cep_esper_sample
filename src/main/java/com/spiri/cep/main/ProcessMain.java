@@ -1,11 +1,11 @@
 package com.spiri.cep.main;
 
-import com.spiri.cep.common.Constant;
+import com.spiri.common.Constant;
 import com.spiri.common.util.Utils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.spiri.cep.common.CommonString;
+import com.spiri.common.CommonString;
 import com.spiri.cep.context.ContextManager;
 
 import sun.misc.Signal;

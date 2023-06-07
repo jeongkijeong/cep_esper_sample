@@ -7,7 +7,7 @@ import org.apache.ibatis.session.SqlSession;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.spiri.cep.common.CommonString;
+import com.spiri.common.CommonString;
 
 public class WorkerDaoCore implements CommonString {
 	private Logger logger = LoggerFactory.getLogger(getClass());

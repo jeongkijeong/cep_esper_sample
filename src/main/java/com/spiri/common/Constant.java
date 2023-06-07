@@ -1,4 +1,4 @@
-package com.spiri.cep.common;
+package com.spiri.common;
 
 public class Constant {
 	public static boolean RUN = true;

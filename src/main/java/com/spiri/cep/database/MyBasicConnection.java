@@ -1,6 +1,6 @@
 package com.spiri.cep.database;
 
-import com.spiri.cep.common.Constant;
+import com.spiri.common.Constant;
 import com.spiri.common.util.Utils;
 import org.apache.ibatis.io.Resources;
 import org.apache.ibatis.session.SqlSession;

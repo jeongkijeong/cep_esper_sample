@@ -3,8 +3,8 @@ package com.spiri.cep.context;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
-import com.spiri.cep.common.Constant;
-import com.spiri.cep.common.CommonString;
+import com.spiri.common.Constant;
+import com.spiri.common.CommonString;
 
 public abstract class DataHandler implements Runnable, CommonString {
 	private ArrayBlockingQueue<Object> queue = null;
